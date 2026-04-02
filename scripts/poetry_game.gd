@@ -2,7 +2,7 @@ extends RefCounted
 class_name PoetryGameState
 
 ## Rules prototype for "The Poetry of Place" — relative placement + core loop.
-## Internal positions are integer cells on an unbounded plane; first card at origin.
+## Internal positions are integer cells on an unbounded plane; opening landscape is placed explicitly at origin.
 
 enum Tier { LANDSCAPE, STRUCTURE, ROOM, CONTAINER, OBJECT }
 
@@ -66,8 +66,8 @@ static func relation_display(r: Relation) -> String:
 	return "?"
 
 
-func start_game(p_goal: String) -> void:
-	goal = p_goal
+func new_session() -> void:
+	goal = ""
 	_next_id = 1
 	_cards_played = 0
 	cards.clear()
@@ -76,8 +76,31 @@ func start_game(p_goal: String) -> void:
 	carried_object_id = -1
 	pressure_pending = false
 	game_ended = false
-	_place_new_card("Opening landscape", Tier.LANDSCAPE, Vector2i.ZERO, [], [], false)
 	state_changed.emit()
+
+
+func set_goal(p_goal: String) -> void:
+	goal = p_goal.strip_edges()
+	if goal.is_empty():
+		goal = "Unspoken goal"
+	state_changed.emit()
+
+
+## First card only: must be called with an empty board (after set_goal).
+func place_opening_landscape(phrase: String) -> String:
+	if game_ended:
+		return "Game is over. Start a new session."
+	if pressure_pending:
+		return "Resolve pressure before changing the board."
+	if not cell_to_id.is_empty():
+		return "The opening landscape is already on the board."
+	var p := phrase.strip_edges()
+	if p.is_empty():
+		p = "Opening landscape"
+	_place_new_card(p, Tier.LANDSCAPE, Vector2i.ZERO, [], [], false)
+	state_changed.emit()
+	_check_end_after_action()
+	return ""
 
 
 func cards_remaining() -> int:
@@ -220,6 +243,58 @@ func placement_error_relative(tier: Tier, anchor_id: int, relation: Relation) ->
 
 func can_place_relative(tier: Tier, anchor_id: int, relation: Relation) -> bool:
 	return placement_error_relative(tier, anchor_id, relation).is_empty()
+
+
+## Legal orthogonal directions from this anchor for the given tier (for UI pickers).
+func valid_relations_from_anchor(tier: Tier, anchor_id: int) -> Array[int]:
+	var out: Array[int] = []
+	if not cards.has(anchor_id):
+		return out
+	if not cell_to_id.has(cards[anchor_id].cell):
+		return out
+	for r in [Relation.WEST, Relation.EAST, Relation.NORTH, Relation.SOUTH]:
+		if can_place_relative(tier, anchor_id, r):
+			out.append(int(r))
+	return out
+
+
+## Empty cells where this tier can be placed (orthogonal to some board card). Prefer_anchor_id is processed last so it wins ties.
+func valid_placement_slots_by_cell(tier: Tier, prefer_anchor_id: int = -1) -> Dictionary:
+	var out: Dictionary = {}
+	if game_ended or pressure_pending or cell_to_id.is_empty():
+		return out
+	var ids: Array[int] = []
+	for aid in cell_to_id.values():
+		ids.append(int(aid))
+	ids.sort()
+	if prefer_anchor_id >= 0:
+		var idx := ids.find(prefer_anchor_id)
+		if idx >= 0:
+			ids.remove_at(idx)
+			ids.append(prefer_anchor_id)
+	for a in ids:
+		for r in [Relation.WEST, Relation.EAST, Relation.NORTH, Relation.SOUTH]:
+			if can_place_relative(tier, a, r):
+				var cl: Vector2i = cell_for_relation(a, r)
+				# String keys avoid rare Dictionary/Vector2i key mismatches when rebinding clicks.
+				var ck := "%d,%d" % [cl.x, cl.y]
+				out[ck] = {"anchor_id": a, "relation": int(r), "cell": cl}
+	return out
+
+
+## Valid empty cells only orthogonally adjacent to this anchor (matches the side dropdown).
+func valid_placement_slots_from_anchor(tier: Tier, anchor_id: int) -> Dictionary:
+	var out: Dictionary = {}
+	if game_ended or pressure_pending or not cards.has(anchor_id):
+		return out
+	if not cell_to_id.has(cards[anchor_id].cell):
+		return out
+	for r in [Relation.WEST, Relation.EAST, Relation.NORTH, Relation.SOUTH]:
+		if can_place_relative(tier, anchor_id, r):
+			var cl: Vector2i = cell_for_relation(anchor_id, r)
+			var ck := "%d,%d" % [cl.x, cl.y]
+			out[ck] = {"anchor_id": anchor_id, "relation": int(r), "cell": cl}
+	return out
 
 
 func _validate_shadows_under(shadow_ids_under: Array) -> String:
