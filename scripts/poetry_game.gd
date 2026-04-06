@@ -282,7 +282,7 @@ func valid_placement_slots_by_cell(tier: Tier, prefer_anchor_id: int = -1) -> Di
 	return out
 
 
-## Valid empty cells only orthogonally adjacent to this anchor (matches the side dropdown).
+## Valid empty cells only orthogonally adjacent to this anchor (green ＋ slots on the board).
 func valid_placement_slots_from_anchor(tier: Tier, anchor_id: int) -> Dictionary:
 	var out: Dictionary = {}
 	if game_ended or pressure_pending or not cards.has(anchor_id):
